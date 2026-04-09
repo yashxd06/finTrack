@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — FinTrack{% endblock %}
+{% block head %}
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-inner">
+
+  <!-- ─── KPI SUMMARY CARDS (filled by JS) ─── -->
+  <section class="kpi-row">
+    <div class="kpi-card kpi-income">
+      <span class="kpi-label">Total Income</span>
+      <span class="kpi-value" id="kpi-income">—</span>
+    </div>
+    <div class="kpi-card kpi-expense">
+      <span class="kpi-label">Total Expenses</span>
+      <span class="kpi-value" id="kpi-expense">—</span>
+    </div>
+    <div class="kpi-card kpi-savings">
+      <span class="kpi-label">Net Savings</span>
+      <span class="kpi-value" id="kpi-savings">—</span>
+    </div>
+  </section>
+
+  <!-- ─── CHARTS ─── -->
+  <section class="charts-grid">
+    <div class="chart-card chart-card--bar">
+      <h3 class="chart-title">Monthly Income vs Expense</h3>
+      <p class="chart-query-tag">SQL → GROUP BY strftime('%Y-%m', date)</p>
+      <div class="chart-wrap">
+        <canvas id="chartMonthly"></canvas>
+      </div>
+    </div>
+    <div class="chart-card chart-card--pie">
+      <h3 class="chart-title">Expense by Category</h3>
+      <p class="chart-query-tag">SQL → JOIN categories WHERE type = 'Expense'</p>
+      <div class="chart-wrap">
+        <canvas id="chartCategory"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── ADD TRANSACTION FORM ─── -->
+  <section class="section-block">
+    <div class="section-header">
+      <h2 class="section-title">Add Transaction</h2>
+      <button class="btn-ghost" id="toggle-form">+ New</button>
+    </div>
+
+    <div class="form-card" id="add-form" style="display:none;">
+      <form method="POST" action="{{ url_for('add_transaction') }}">
+        <div class="form-grid">
+          <div class="field">
+            <label for="category_id">Category</label>
+            <select id="category_id" name="category_id" required>
+              <option value="">Select…</option>
+              {% for cat in categories %}
+              <option value="{{ cat.category_id }}">[{{ cat.type }}] {{ cat.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="amount">Amount (₹)</label>
+            <input type="number" id="amount" name="amount"
+                   step="0.01" min="0.01" placeholder="e.g. 2500.00" required/>
+          </div>
+
+          <div class="field">
+            <label for="date">Date</label>
+            <input type="date" id="date" name="date" required/>
+          </div>
+
+          <div class="field field--full">
+            <label for="description">Description</label>
+            <input type="text" id="description" name="description"
+                   placeholder="Optional note…"/>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Transaction →</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ─── RECENT TRANSACTIONS TABLE ─── -->
+  <section class="section-block">
+    <div class="section-header">
+      <h2 class="section-title">Recent Transactions</h2>
+      <span class="section-meta">Last 50 entries</span>
+    </div>
+
+    <div class="table-wrap">
+      {% if transactions %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th class="align-right">Amount (₹)</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for txn in transactions %}
+          <tr class="row--{{ txn.category_type | lower }}">
+            <td class="cell-date">{{ txn.date }}</td>
+            <td>
+              <span class="badge badge--{{ txn.category_type | lower }}">
+                {{ txn.category_type }}
+              </span>
+              {{ txn.category }}
+            </td>
+            <td class="cell-desc">{{ txn.description or '—' }}</td>
+            <td class="align-right amount--{{ txn.category_type | lower }}">
+              {% if txn.category_type == 'Income' %}+{% else %}−{% endif %}
+              ₹{{ "%.2f" | format(txn.amount) }}
+            </td>
+            <td class="cell-actions">
+              <a href="{{ url_for('edit_transaction', txn_id=txn.transaction_id) }}"
+                 class="action-link action-edit">Edit</a>
+              <form method="POST"
+                    action="{{ url_for('delete_transaction', txn_id=txn.transaction_id) }}"
+                    style="display:inline"
+                    onsubmit="return confirm('Delete this transaction?')">
+                <button type="submit" class="action-link action-delete">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p class="empty-state">No transactions yet. Add one above.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- ─── SQL QUERY VIEWER ─── -->
+  <section class="section-block sql-viewer">
+    <div class="section-header">
+      <h2 class="section-title">SQL Queries in Action</h2>
+      <span class="section-meta">Raw queries powering this dashboard</span>
+    </div>
+    <div class="sql-tabs">
+      <button class="sql-tab active" data-tab="monthly">Monthly</button>
+      <button class="sql-tab" data-tab="category">Category</button>
+      <button class="sql-tab" data-tab="savings">Savings</button>
+    </div>
+    <div class="sql-panels">
+      <pre class="sql-panel active" id="tab-monthly"><code>SELECT
+    strftime('%Y-%m', t.date)                              AS month,
+    COALESCE(SUM(CASE WHEN c.type = 'Income'
+                 THEN t.amount ELSE 0 END), 0)             AS total_income,
+    COALESCE(SUM(CASE WHEN c.type = 'Expense'
+                 THEN t.amount ELSE 0 END), 0)             AS total_expense
+FROM transactions t
+JOIN categories c ON t.category_id = c.category_id
+WHERE t.user_id = :user_id
+GROUP BY strftime('%Y-%m', t.date)
+ORDER BY month ASC;</code></pre>
+
+      <pre class="sql-panel" id="tab-category"><code>SELECT
+    c.name            AS category,
+    SUM(t.amount)     AS total_spent
+FROM transactions t
+JOIN categories c ON t.category_id = c.category_id
+WHERE t.user_id = :user_id
+  AND c.type    = 'Expense'
+GROUP BY c.category_id, c.name
+ORDER BY total_spent DESC;</code></pre>
+
+      <pre class="sql-panel" id="tab-savings"><code>SELECT
+    COALESCE(SUM(CASE WHEN c.type = 'Income'
+                 THEN t.amount ELSE 0 END), 0)  AS gross_income,
+    COALESCE(SUM(CASE WHEN c.type = 'Expense'
+                 THEN t.amount ELSE 0 END), 0)  AS gross_expense,
+    COALESCE(SUM(CASE WHEN c.type = 'Income'
+                 THEN t.amount ELSE 0 END), 0)
+  - COALESCE(SUM(CASE WHEN c.type = 'Expense'
+                 THEN t.amount ELSE 0 END), 0)  AS net_savings
+FROM transactions t
+JOIN categories c ON t.category_id = c.category_id
+WHERE t.user_id = :user_id;</code></pre>
+    </div>
+  </section>
+
+</div><!-- /page-inner -->
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

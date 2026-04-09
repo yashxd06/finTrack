@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Edit Transaction — FinTrack{% endblock %}
+
+{% block content %}
+<div class="page-inner">
+  <div class="section-header">
+    <h2 class="section-title">Edit Transaction</h2>
+    <a href="{{ url_for('dashboard') }}" class="btn-ghost">← Back</a>
+  </div>
+
+  <div class="form-card">
+    <form method="POST" action="{{ url_for('edit_transaction', txn_id=txn.transaction_id) }}">
+      <div class="form-grid">
+        <div class="field">
+          <label for="category_id">Category</label>
+          <select id="category_id" name="category_id" required>
+            <option value="">Select category…</option>
+            {% for cat in categories %}
+            <option value="{{ cat.category_id }}"
+              {% if cat.category_id == txn.category_id %}selected{% endif %}>
+              [{{ cat.type }}] {{ cat.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="amount">Amount (₹)</label>
+          <input type="number" id="amount" name="amount" step="0.01" min="0.01"
+                 value="{{ txn.amount }}" required/>
+        </div>
+
+        <div class="field">
+          <label for="date">Date</label>
+          <input type="date" id="date" name="date" value="{{ txn.date }}" required/>
+        </div>
+
+        <div class="field field--full">
+          <label for="description">Description</label>
+          <input type="text" id="description" name="description"
+                 value="{{ txn.description or '' }}" placeholder="Optional note…"/>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <a href="{{ url_for('dashboard') }}" class="btn-ghost">Cancel</a>
+        <button type="submit" class="btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
